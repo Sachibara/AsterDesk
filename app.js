@@ -15,17 +15,29 @@ function render(){
   }
 }
 function persist(){try{localStorage.setItem(key,JSON.stringify(data))}catch{el('status').textContent='Storage unavailable. Changes last for this tab.'}}
-function line(who,text){
+function line(who,text,source){
   const p=document.createElement('p'),b=document.createElement('strong');b.textContent=who;p.append(b,text);
+  if(source){const a=document.createElement('a');a.href=source;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Read on Wikipedia';p.append(document.createElement('br'),a)}
   el('log').append(p);el('log').scrollTop=el('log').scrollHeight;
   if(who==='Aster'&&el('speak').checked&&window.speechSynthesis){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text))}
 }
 function finish(){el('send').disabled=false;el('stop').hidden=true}
 function stop(message){worker?.terminate();worker=null;finish();el('status').textContent=message;if(!el('input').value)el('input').value=pending;pending=''}
 el('stop').onclick=()=>stop('Stopped.');
-el('form').onsubmit=e=>{
+el('form').onsubmit=async e=>{
   e.preventDefault();const q=el('input').value.trim();if(!q||el('send').disabled)return;
   line('You',q);el('input').value='';el('status').textContent='';
+  if(el('online').checked){
+    el('online').checked=false;el('send').disabled=true;el('status').textContent='Searching Wikipedia…';
+    try{
+      const articles=await lookupWiki(q);
+      if(!articles.length)line('Aster','No article summary found. Try a shorter topic.');
+      for(const a of articles)line('Aster',a.title+' — '+a.extract,'https://en.wikipedia.org/?curid='+a.pageid);
+      history.push({role:'user',content:q},{role:'assistant',content:articles.map(a=>a.title+': '+a.extract).join(' ').slice(0,1300)});history=history.slice(-6);
+      el('status').textContent='Wikipedia lookup complete.';
+    }catch{el('status').textContent='Wikipedia is unavailable. You can retry the lookup.';if(!el('input').value)el('input').value=q}
+    finally{finish()}return;
+  }
   const match=q.match(/^(add (?:a )?task|remember)\s*[:\s]\s*(.+)$/is);
   if(match){
     const k=match[1].toLowerCase()==='remember'?'memory':'tasks',item=match[2].trim();
@@ -40,6 +52,11 @@ el('form').onsubmit=e=>{
     const terms=q.toLowerCase().match(/[a-z]{3,}/g)?.filter(w=>!ignored.has(w))||[];
     const matches=data.memory.filter(note=>terms.some(w=>note.toLowerCase().match(/[a-z]+/g)?.includes(w)));
     if(matches.length){line('Aster','From your saved memory: '+matches.join(' · '));return}
+  }
+  const excerpts=findReferences(q);
+  if(excerpts.length){
+    const answer=excerpts.map(r=>r.name+' · passage '+r.number+'\n'+r.body).join('\n\n');
+    line('Aster','From your references:\n'+answer);history.push({role:'user',content:q},{role:'assistant',content:answer});history=history.slice(-6);return;
   }
   pending=q;el('send').disabled=true;el('stop').hidden=false;el('status').textContent='Starting local AI…';
   try{
