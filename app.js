@@ -21,12 +21,14 @@ function line(who,text,source){
   el('log').append(p);el('log').scrollTop=el('log').scrollHeight;
   if(who==='Aster'&&el('speak').checked&&window.speechSynthesis){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text))}
 }
-function finish(){el('brain').disabled=false;el('send').disabled=false;el('stop').hidden=true}
+function finish(){el('agentMode').disabled=false;el('brain').disabled=false;el('send').disabled=false;el('stop').hidden=true}
 function stop(message){worker?.terminate();worker=null;finish();el('status').textContent=message;if(!el('input').value)el('input').value=pending;pending=''}
 el('stop').onclick=()=>stop('Stopped.');
 el('form').onsubmit=async e=>{
   e.preventDefault();const q=el('input').value.trim();if(!q||el('send').disabled)return;
   line('You',q);el('input').value='';el('status').textContent='';
+  el('proposal').hidden=true;
+  if(el('agentMode').checked){runAgent(q);return}
   if(/^teach:/i.test(q)){
     const parts=q.slice(6).split('='),question=parts.shift().trim(),answer=parts.join('=').trim();
     if(!question||!answer){line('Aster','Use Teach: question = answer');return}
