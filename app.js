@@ -21,12 +21,21 @@ function line(who,text,source){
   el('log').append(p);el('log').scrollTop=el('log').scrollHeight;
   if(who==='Aster'&&el('speak').checked&&window.speechSynthesis){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text))}
 }
-function finish(){el('send').disabled=false;el('stop').hidden=true}
+function finish(){el('brain').disabled=false;el('send').disabled=false;el('stop').hidden=true}
 function stop(message){worker?.terminate();worker=null;finish();el('status').textContent=message;if(!el('input').value)el('input').value=pending;pending=''}
 el('stop').onclick=()=>stop('Stopped.');
 el('form').onsubmit=async e=>{
   e.preventDefault();const q=el('input').value.trim();if(!q||el('send').disabled)return;
   line('You',q);el('input').value='';el('status').textContent='';
+  if(/^teach:/i.test(q)){
+    const parts=q.slice(6).split('='),question=parts.shift().trim(),answer=parts.join('=').trim();
+    if(!question||!answer){line('Aster','Use Teach: question = answer');return}
+    try{
+      const next=lessons.filter(l=>normalizeLesson(l.question)!==normalizeLesson(question));
+      writeLessons([...next,{question,answer}]);line('Aster','Lesson saved on this device.');
+    }catch{line('Aster','Unable to save the lesson to browser storage.')}
+    return;
+  }
   if(el('online').checked){
     el('online').checked=false;el('send').disabled=true;el('status').textContent='Searching Wikipedia…';
     try{
@@ -47,6 +56,8 @@ el('form').onsubmit=async e=>{
   if(/^(?:list|show)(?: my)? (tasks|memories)[.!?]?$/i.test(q)){
     const items=/tasks/i.test(q)?data.tasks:data.memory;line('Aster',items.join('\n')||'Your list is empty.');return;
   }
+  const exact=lessons.find(l=>normalizeLesson(l.question)===normalizeLesson(q));
+  if(exact){lessonReply(exact);return}
   if(/^(what|which|when|where|who|do you remember)\b/i.test(q)&&/\b(my|I|remember)\b/i.test(q)){
     const ignored=new Set('what which when where who the name does remember called have with from about'.split(' '));
     const terms=q.toLowerCase().match(/[a-z]{3,}/g)?.filter(w=>!ignored.has(w))||[];
@@ -58,18 +69,46 @@ el('form').onsubmit=async e=>{
     const answer=excerpts.map(r=>r.name+' · passage '+r.number+'\n'+r.body).join('\n\n');
     line('Aster','From your references:\n'+answer);history.push({role:'user',content:q},{role:'assistant',content:answer});history=history.slice(-6);return;
   }
-  pending=q;el('send').disabled=true;el('stop').hidden=false;el('status').textContent='Starting local AI…';
+  pending=q;el('brain').disabled=true;el('send').disabled=true;el('stop').hidden=false;el('status').textContent='Starting local AI…';
   try{
     worker??=new Worker('./engine.js',{type:'module'});
     worker.onerror=()=>stop('The local model could not start. Check your connection and retry.');
     worker.onmessage=({data:m})=>{
       if(m.status){el('status').textContent=m.status;return}
+      if(m.lesson){lessonReply(m.lesson);pending='';finish();el('status').textContent='Matched a saved lesson on this device.';return}
       if(m.error){stop('The model could not finish. Try a shorter question or free device memory.');return}
       line('Aster',m.reply);history.push({role:'user',content:q},{role:'assistant',content:m.reply});history=history.slice(-6);
       pending='';finish();el('status').textContent='Answered on this device.';
     };
     const context=JSON.stringify({tasks:data.tasks.slice(-10),memory:data.memory.slice(-10)}).slice(0,1800);
-    worker.postMessage([{role:'system',content:'You are Aster, a concise personal assistant. Answer the question directly. You can discuss, plan and suggest. Only the interface can change saved items. Never claim external actions. User context: '+context},...history.slice(-4).map(m=>({...m,content:m.content.slice(0,700)})),{role:'user',content:q}]);
+    worker.postMessage({brain:el('brain').value,lessons,messages:[{role:'system',content:'You are Aster, a concise personal assistant. Answer the question directly. You can discuss, plan and suggest. Only the interface can change saved items. Never claim external actions. User context: '+context},...history.slice(-4).map(m=>({...m,content:m.content.slice(0,700)})),{role:'user',content:q}]});
   }catch{stop('Local AI unavailable on this browser.')}
 };
 render();
+
+function lessonReply(lesson){
+  line('Aster',lesson.answer+'\nFrom your lesson: '+lesson.question);
+  history.push({role:'user',content:lesson.question},{role:'assistant',content:lesson.answer});history=history.slice(-6);
+}
+function normalizeLesson(text){return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim()}
+let lessons=[];
+try{
+  const saved=JSON.parse(localStorage.getItem('aster-lessons-v1'));
+  if(Array.isArray(saved)) lessons=saved.filter(l=>l&&typeof l.question==='string'&&typeof l.answer==='string');
+}catch{}
+function writeLessons(next){
+  if(next.length>200)throw Error('Lesson capacity reached');
+  localStorage.setItem('aster-lessons-v1',JSON.stringify(next));lessons=next;renderLessons();
+}
+function renderLessons(){
+  const list=el('lessons');list.replaceChildren();
+  for(const lesson of lessons){
+    const row=document.createElement('li'),remove=document.createElement('button');
+    row.append(lesson.question+' — '+lesson.answer+' ');remove.textContent='Forget';
+    remove.onclick=()=>{try{writeLessons(lessons.filter(l=>l!==lesson))}catch{el('status').textContent='Could not update lessons.'}};
+    row.append(remove);list.append(row);
+  }
+}
+renderLessons();
+
+el('brain').onchange=()=>{worker?.terminate();worker=null};
