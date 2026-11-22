@@ -29,3 +29,20 @@ function sync(){activity.textContent=send.disabled?(/load|start/i.test(status.te
 new MutationObserver(sync).observe(status,{childList:true,subtree:true,characterData:true});
 new MutationObserver(sync).observe(send,{attributes:true,attributeFilter:['disabled']});
 motion.addEventListener('change',restart);document.addEventListener('visibilitychange',restart);restart();
+
+const controls=document.querySelectorAll('[data-open]');
+for(const button of controls){
+  button.addEventListener('click',()=>{
+    const opening=button.getAttribute('aria-expanded')==='false';
+    for(const control of controls){
+      const selected=opening&&control===button;
+      control.setAttribute('aria-expanded',String(selected));
+      document.getElementById(control.dataset.open).hidden=!selected;
+    }
+    if(opening){
+      const pane=document.getElementById(button.dataset.open);
+      pane.scrollIntoView({block:'nearest',behavior:motion.matches?'instant':'smooth'});
+      if(button.dataset.open==='chat')document.getElementById('input').focus({preventScroll:true});
+    }
+  });
+}
