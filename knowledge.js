@@ -18,14 +18,43 @@ function showLibrary(){
     };li.append(remove);list.append(li);
   }
 }
+async function extractDocument(file){
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(file.size>10000000)throw Error('file exceeds 10 MB');
+  if(['txt','md','markdown'].includes(ext))return file.text();
+  if(ext==='docx'){
+    const {unzipSync,strFromU8}=await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
+    const entry='word/document.xml';
+    const files=unzipSync(new Uint8Array(await file.arrayBuffer()),{filter:f=>f.name===entry&&f.originalSize<=8000000});
+    if(!files[entry])throw Error('unable to read Word document or document too large');
+    const xml=new DOMParser().parseFromString(strFromU8(files[entry]),'application/xml');
+    return Array.from(xml.getElementsByTagNameNS('*','p'),p=>Array.from(p.getElementsByTagNameNS('*','t'),t=>t.textContent).join('')).join('\n');
+  }
+  if(ext==='pdf'){
+    const pdf=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+    pdf.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    const doc=await pdf.getDocument({data:await file.arrayBuffer(),isEvalSupported:false}).promise;
+    const pages=[];let size=0;
+    try{
+      for(let i=1;i<=doc.numPages;i++){
+        const page=await doc.getPage(i),content=await page.getTextContent();
+        const text=content.items.map(item=>item.str||'').join(' ');
+        size+=text.length;if(size>1000000)throw Error('extracted text exceeds the library limit');
+        pages.push(text);page.cleanup();
+      }
+    }finally{await doc.destroy()}
+    return pages.join('\n');
+  }
+  throw Error('unsupported file type');
+}
 document.getElementById('files').onchange=async e=>{
   const input=e.target;input.disabled=true;
   const messages=[];
   for(const file of input.files){
     try{
-      if(!/\.(txt|md|markdown)$/i.test(file.name)||file.size>250000)throw Error('use a text or Markdown file under 250 KB');
-      const text=(await file.text()).trim();
-      if(!text)throw Error('file is empty');
+      document.getElementById('libraryStatus').textContent='Reading '+file.name+'…';
+      const text=(await extractDocument(file)).trim();
+      if(!text)throw Error('no readable text found; scanned pages need OCR first');
       const next=[...documents.filter(d=>d.name!==file.name),{name:file.name,text}];
       if(new Blob(next.map(d=>d.text)).size>1000000)throw Error('library is full');
       saveLibrary(next);messages.push('Saved '+file.name);
