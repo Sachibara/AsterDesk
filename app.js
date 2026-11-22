@@ -35,6 +35,12 @@ el('form').onsubmit=e=>{
   if(/^(?:list|show)(?: my)? (tasks|memories)[.!?]?$/i.test(q)){
     const items=/tasks/i.test(q)?data.tasks:data.memory;line('Aster',items.join('\n')||'Your list is empty.');return;
   }
+  if(/^(what|which|when|where|who|do you remember)\b/i.test(q)&&/\b(my|I|remember)\b/i.test(q)){
+    const ignored=new Set('what which when where who the name does remember called have with from about'.split(' '));
+    const terms=q.toLowerCase().match(/[a-z]{3,}/g)?.filter(w=>!ignored.has(w))||[];
+    const matches=data.memory.filter(note=>terms.some(w=>note.toLowerCase().match(/[a-z]+/g)?.includes(w)));
+    if(matches.length){line('Aster','From your saved memory: '+matches.join(' · '));return}
+  }
   pending=q;el('send').disabled=true;el('stop').hidden=false;el('status').textContent='Starting local AI…';
   try{
     worker??=new Worker('./engine.js',{type:'module'});
