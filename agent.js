@@ -14,9 +14,10 @@ function parseSteps(reply){
   return reply.split(/\n+/).map(s=>s.trim()).filter(s=>/^(?:[-*•]|\d+[.)])\s+/.test(s))
     .map(s=>s.replace(/^(?:[-*•]|\d+[.)])\s+/,'').trim()).filter(Boolean).slice(0,5);
 }
-function runAgent(goal){
+async function runAgent(goal){
   pending=goal;agentMode.disabled=true;el('send').disabled=true;el('brain').disabled=true;el('stop').hidden=false;
-  const passages=findReferences(goal).map(r=>r.name+' #'+r.number+': '+r.body.slice(0,280));
+  const passages=(await findReferences(goal).catch(()=>[])).map(r=>r.name+' #'+r.number+': '+r.body.slice(0,280));
+  if(pending!==goal||!el('send').disabled)return;
   const facts=relevant(lessons,l=>l.question+' '+l.answer,goal);
   const tasks=relevant(data.tasks,t=>t,goal);
   line('Agent','Checked local sources: '+passages.length+' matching passages, '+facts.length+' lessons, '+tasks.length+' existing tasks.');

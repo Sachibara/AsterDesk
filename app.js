@@ -66,7 +66,9 @@ el('form').onsubmit=async e=>{
     const matches=data.memory.filter(note=>terms.some(w=>note.toLowerCase().match(/[a-z]+/g)?.includes(w)));
     if(matches.length){line('Aster','From your saved memory: '+matches.join(' · '));return}
   }
-  const excerpts=findReferences(q);
+  el('send').disabled=true;el('agentMode').disabled=true;
+  const excerpts=await findReferences(q).catch(()=>[]);
+  finish();
   if(excerpts.length){
     const answer=excerpts.map(r=>r.name+' · passage '+r.number+'\n'+r.body).join('\n\n');
     line('Aster','From your references:\n'+answer);history.push({role:'user',content:q},{role:'assistant',content:answer});history=history.slice(-6);return;
