@@ -4,6 +4,22 @@
   const skills='salesforce,apex,lwc,python,javascript,typescript,react,sql,automation,network,security,software,engineering,support,developer,devops,systems,cloud,data,marketing,operations,technical,ai'.split(',');
   const words=text=>new Set(text.toLowerCase().match(/[a-z0-9]+/g)||[]);
   const home='https://jimcamus.vercel.app/';
+  const boardQuery=el('boardQuery');
+  function boardLinks(){
+    const term=boardQuery.value.trim();
+    const remote=[term,'work from home'].filter(Boolean).join(' ');
+    el('indeed').href='https://ph.indeed.com/jobs?'+new URLSearchParams({q:remote});
+    el('jobstreet').href='https://ph.jobstreet.com/'+encodeURIComponent(remote.toLowerCase().replace(/[^a-z0-9]+/g,'-'))+'-jobs';
+    el('linkedin').href='https://www.linkedin.com/jobs/search/?'+new URLSearchParams({keywords:term,location:'Worldwide',f_WT:'2'});
+  }
+  boardQuery.addEventListener('input',boardLinks);
+  el('huntOrigin').textContent=location.origin;
+  el('huntClient').value=localStorage.getItem('aster-web-client')||'';
+  el('saveClient').onclick=()=>{
+    const id=el('huntClient').value.trim();
+    if(!/^[\w-]+\.apps\.googleusercontent\.com$/.test(id)){el('setupStatus').textContent='Enter the public Web application client ID from Google.';return;}
+    localStorage.setItem('aster-web-client',id);el('setupStatus').textContent='Client ID saved. Gmail consent opens when you choose an email application.';
+  };
   let match,revision=0;
   function reset(){revision++;match=null;el('huntApply').hidden=true;list.replaceChildren();status.textContent='';}
   form.addEventListener('input',reset);
@@ -18,21 +34,32 @@
     try{
       const file=el('huntCV').files[0],url=new URL(el('huntURL').value);
       if(url.protocol!=='https:'||url.username||url.password)throw Error('Enter an HTTPS portfolio URL.');
-      const [cv,data]=await Promise.all([extractDocument(file),get('/api/hunt')]);
+      const [cv,sources]=await Promise.all([extractDocument(file),Promise.allSettled([get('/api/hunt'),get('/api/world')])]);
+      const data=sources[0].value||{jobs:[],unavailable:['employer listings','portfolio']};
+      const jobs=[...data.jobs,...(sources[1].value||[])];
+      if(sources[1].status==='rejected')data.unavailable.push('Remotive');
       if(run!==revision)return;
       if(!cv.trim())throw Error('The CV has no readable text. Upload a text-based copy.');
       const project=el('huntProject').value.trim(),cvWords=words(cv);
       const site=url.href===home?data.portfolio:'';
       const evidence=words(cv+' '+site+' '+project);
-      const locations=el('huntLocation').value.toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
-      const results=data.jobs.map(job=>{
+      const region=el('huntRegion').value;
+      function inRegion(job){
+        if(!job.remote)return false;
+        if(job.worldwide||region==='all')return true;
+        return region==='ph'&&/\bphilippines\b/i.test(job.location);
+      }
+      if(!boardQuery.value.trim()){
+        boardQuery.value=skills.filter(k=>cvWords.has(k)).slice(0,1).join('');boardLinks();
+      }
+      const results=jobs.filter(inRegion).map(job=>{
         const terms=words(job.title+' '+(job.skills||[]).join(' '));
         const hits=skills.filter(k=>evidence.has(k)&&terms.has(k));
         return {job,hits};
-      }).filter(({job,hits})=>hits.length&&(!locations.length||locations.some(l=>job.location.toLowerCase().includes(l)))).sort((a,b)=>b.hits.length-a.hits.length);
+      }).filter(({job,hits})=>hits.length).sort((a,b)=>b.hits.length-a.hits.length);
       for(const {job,hits} of results.slice(0,40)){
         const li=document.createElement('li'),a=document.createElement('a');a.href=job.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=job.title;
-        li.append(a,' · '+job.company+' · '+job.location+' · '+hits.join(', '));list.append(li);
+        const meta=document.createElement('small');meta.textContent=[job.company,job.location,job.source||'Employer careers',hits.join(', ')].filter(Boolean).join(' · ');li.append(a,meta);list.append(li);
       }
       status.textContent=results.length+' matching listings. Showing up to 40. Verify location eligibility in the posting.'+(data.unavailable.length?' Unavailable: '+data.unavailable.join(', ')+'.':'')+(!site?' Portfolio matching uses your project highlight.':'');
       const eligible=results.find(({job})=>job.recipient&&job.skills.every(k=>cvWords.has(k)));
@@ -40,7 +67,7 @@
         match={job:eligible.job,file,url:url.href,project};
         el('huntClient').value=data.clientId||el('huntClient').value;el('huntApply').hidden=false;
         try{await loadGoogle();}catch(e){if(run===revision)status.textContent+=' '+e.message;}
-      }else status.textContent+=' Email submission requires a listed email-enabled match, its three core skills in your CV, a project highlight and a CV under 10 MB.';
+      }
     }catch(e){if(run===revision)status.textContent=e.message;}
   };
   function base64(bytes){

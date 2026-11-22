@@ -17,11 +17,11 @@ async function emailOpening() {
     || !page.includes('mailto:careers@sliick.com?subject='+encodeURIComponent(subject))
     || !text.includes('Please send your CV and a brief cover letter highlighting something you have built')
     || !text.includes('based in the Philippines') || /wire transfer|application fee|bank account|crypto payment|position (?:is |has been )?(?:closed|filled)/i.test(text)) return [];
-  return [{title:'Salesforce Developer',company:'Sliick',location:'Remote · Philippines',url:role,recipient:'careers@sliick.com',subject,skills:['salesforce','apex','lwc']}];
+  return [{title:'Salesforce Developer',company:'Sliick',location:'Remote · Philippines',remote:true,url:role,recipient:'careers@sliick.com',subject,skills:['salesforce','apex','lwc']}];
 }
 async function board() {
   const data = JSON.parse(await read('https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs'));
-  return data.jobs.filter(j=>Number.isSafeInteger(j.id)).map(j=>({title:j.title,company:'Cloudflare',location:j.location?.name || '',url:'https://job-boards.greenhouse.io/cloudflare/jobs/'+j.id}));
+  return data.jobs.filter(j=>Number.isSafeInteger(j.id)&&/\bremote\b/i.test(j.location?.name)&&!/hybrid|on.?site|office/i.test(j.location?.name)).map(j=>({title:j.title,company:'Cloudflare',source:'Greenhouse',remote:true,location:j.location?.name || '',url:'https://job-boards.greenhouse.io/cloudflare/jobs/'+j.id}));
 }
 module.exports = async function(req,res) {
   res.setHeader('Cache-Control','no-store');
